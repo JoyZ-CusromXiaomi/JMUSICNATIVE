@@ -22,12 +22,13 @@ jobs:
         run: |
           if [ -f "gradlew" ] && [ -d "app" ]; then
             echo "dir=." >> "$GITHUB_OUTPUT"
-          elif [ -f "JoyMusic_Android_Native_Source_SDK36.zip" ]; then
+          elif [ -f "JoyMusic_Source_Coil_Fixed_v2.zip" ]; then
             mkdir -p joymusic-source
-            unzip -q "JoyMusic_Android_Native_Source_SDK36.zip" -d joymusic-source
+            unzip -q "JoyMusic_Source_Coil_Fixed_v2.zip" -d joymusic-source
             echo "dir=joymusic-source" >> "$GITHUB_OUTPUT"
           else
-            echo "ERROR: JoyMusic SDK36 ZIP not found."
+            echo "ERROR: JoyMusic source ZIP not found."
+            ls -la
             exit 1
           fi
 
@@ -37,7 +38,7 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Locate preinstalled Android SDK
+      - name: Locate Android SDK
         id: android
         shell: bash
         run: |
@@ -58,9 +59,6 @@ jobs:
 
           echo "sdk_root=$SDK_ROOT" >> "$GITHUB_OUTPUT"
           echo "sdkmanager=$SDKMANAGER" >> "$GITHUB_OUTPUT"
-
-          echo "Android SDK: $SDK_ROOT"
-          echo "SDK Manager: $SDKMANAGER"
 
       - name: Accept Android licenses
         shell: bash
