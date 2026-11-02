@@ -1,3 +1,4 @@
+
 name: Build JoyMusic APK
 
 on:
@@ -27,7 +28,7 @@ jobs:
             unzip -q "JoyMusic_Android_Native_Source_SDK36.zip" -d joymusic-source
             echo "dir=joymusic-source" >> "$GITHUB_OUTPUT"
           else
-            echo "ERROR: JoyMusic SDK 36 source ZIP not found."
+            echo "ERROR: JoyMusic SDK36 ZIP not found."
             exit 1
           fi
 
@@ -37,18 +38,50 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Locate preinstalled Android SDK
+        id: android
+        shell: bash
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
+
+          if [ -z "$SDK_ROOT" ]; then
+            echo "ERROR: Android SDK not found."
+            exit 1
+          fi
+
+          SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" \
+            -type f -name sdkmanager | sort -V | tail -n 1)
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERROR: SDK Manager not found."
+            exit 1
+          fi
+
+          echo "sdk_root=$SDK_ROOT" >> "$GITHUB_OUTPUT"
+          echo "sdkmanager=$SDKMANAGER" >> "$GITHUB_OUTPUT"
+
+          echo "Android SDK: $SDK_ROOT"
+          echo "SDK Manager: $SDKMANAGER"
+
+      - name: Accept Android licenses
+        shell: bash
+        run: |
+          yes | "${{ steps.android.outputs.sdkmanager }}" \
+            --sdk_root="${{ steps.android.outputs.sdk_root }}" \
+            --licenses || true
 
       - name: Install Android SDK 36
         shell: bash
         run: |
-          sdkmanager --install "platforms;android-36"
+          "${{ steps.android.outputs.sdkmanager }}" \
+            --sdk_root="${{ steps.android.outputs.sdk_root }}" \
+            --install "platforms;android-36" "platform-tools"
 
       - name: Create debug signing key
         shell: bash
         run: |
           mkdir -p "$HOME/.android"
+
           if [ ! -f "$HOME/.android/debug.keystore" ]; then
             keytool -genkeypair -v \
               -keystore "$HOME/.android/debug.keystore" \
@@ -56,7 +89,9 @@ jobs:
               -alias androiddebugkey \
               -keypass android \
               -dname "CN=Android Debug,O=Android,C=US" \
-              -keyalg RSA -keysize 2048 -validity 10000
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000
           fi
 
       - name: Build JoyMusic APK
@@ -68,7 +103,7 @@ jobs:
           chmod +x ./gradlew
           ./gradlew --no-daemon --stacktrace assembleFossRelease
 
-      - name: Upload APK
+      - name: Upload JoyMusic APK
         uses: actions/upload-artifact@v4
         with:
           name: JoyMusic-APK
