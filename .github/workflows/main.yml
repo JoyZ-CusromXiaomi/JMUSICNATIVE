@@ -1,3 +1,4 @@
+
 name: Build JoyMusic APK
 
 on:
@@ -10,7 +11,7 @@ jobs:
   build:
     name: Build JoyMusic Android Release
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository
@@ -21,16 +22,33 @@ jobs:
         shell: bash
         run: |
           if [ -f "gradlew" ] && [ -d "app" ]; then
-            echo "dir=." >> "$GITHUB_OUTPUT"
-          elif [ -f "JoyMusic_Source_Android17_API37.zip" ]; then
-            mkdir -p joymusic-source
-            unzip -q "JoyMusic_Source_Android17_API37.zip" -d joymusic-source
-            echo "dir=joymusic-source" >> "$GITHUB_OUTPUT"
+            PROJECT_DIR="."
           else
-            echo "ERROR: JoyMusic ZIP not found."
-            ls -la
-            exit 1
+            ZIP_FILE=$(find . -maxdepth 1 -type f \
+              -iname '*JoyMusic*.zip' | head -n 1)
+
+            if [ -z "$ZIP_FILE" ]; then
+              echo "ERROR: JoyMusic ZIP not found."
+              ls -la
+              exit 1
+            fi
+
+            mkdir -p joymusic-source
+            unzip -q "$ZIP_FILE" -d joymusic-source
+
+            GRADLEW=$(find joymusic-source \
+              -type f -name gradlew | head -n 1)
+
+            if [ -z "$GRADLEW" ]; then
+              echo "ERROR: gradlew not found in ZIP."
+              exit 1
+            fi
+
+            PROJECT_DIR=$(dirname "$GRADLEW")
           fi
+
+          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo "JoyMusic project: $PROJECT_DIR"
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -42,71 +60,56 @@ jobs:
         id: android
         shell: bash
         run: |
-          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
 
-          if [ -z "$SDK_ROOT" ]; then
-            echo "Android SDK not found."
+          if [ -z "$SDK" ]; then
+            echo "ERROR: Android SDK not found."
             exit 1
           fi
 
-          SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" \
+          MANAGER=$(find "$SDK/cmdline-tools" \
             -type f -name sdkmanager | sort -V | tail -n 1)
 
-          if [ -z "$SDKMANAGER" ]; then
-            echo "SDK Manager not found."
+          if [ -z "$MANAGER" ]; then
+            echo "ERROR: sdkmanager not found."
             exit 1
           fi
 
-          echo "sdk_root=$SDK_ROOT" >> "$GITHUB_OUTPUT"
-          echo "sdkmanager=$SDKMANAGER" >> "$GITHUB_OUTPUT"
+          echo "sdk_root=$SDK" >> "$GITHUB_OUTPUT"
+          echo "sdkmanager=$MANAGER" >> "$GITHUB_OUTPUT"
 
       - name: Accept Android licenses
         shell: bash
         run: |
-          yes | "${{ steps.android.outputs.sdkmanager }}" \
-            --sdk_root="${{ steps.android.outputs.sdk_root }}" \
-            --licenses || true
+          SDK="${{ steps.android.outputs.sdk_root }}"
+          MANAGER="${{ steps.android.outputs.sdkmanager }}"
 
-      - name: Check Available Android SDK
-        id: check_sdk
+          yes | "$MANAGER" \
+            --sdk_root="$SDK" --licenses || true
+
+      - name: Install Android SDK 37.2
         shell: bash
         run: |
           SDK="${{ steps.android.outputs.sdk_root }}"
           MANAGER="${{ steps.android.outputs.sdkmanager }}"
 
-          "$MANAGER" --sdk_root="$SDK" --list \
-            | tee /tmp/android-sdk-list.txt
+          "$MANAGER" --sdk_root="$SDK" \
+            --install "platforms;android-37.2" "platform-tools"
 
-          PACKAGE=$(grep -oE 'platforms;android-37(\.0)?' \
-            /tmp/android-sdk-list.txt | sort -u | head -n 1)
+          echo "Installed Android platforms:"
+          ls -la "$SDK/platforms"
 
-          if [ -z "$PACKAGE" ]; then
-            echo "ERROR: Android API 37 package not found."
-            echo "Available Android platforms:"
-            grep -E 'platforms;android-' \
-              /tmp/android-sdk-list.txt || true
+      - name: Verify Android SDK
+        shell: bash
+        run: |
+          SDK="${{ steps.android.outputs.sdk_root }}"
+
+          if [ ! -d "$SDK/platforms/android-37.2" ]; then
+            echo "ERROR: Android SDK 37.2 installation failed."
             exit 1
           fi
 
-          echo "package=$PACKAGE" >> "$GITHUB_OUTPUT"
-          echo "Found package: $PACKAGE"
-
-      - name: Install Android SDK 37
-        shell: bash
-        run: |
-          SDK="${{ steps.android.outputs.sdk_root }}"
-          MANAGER="${{ steps.android.outputs.sdkmanager }}"
-          PACKAGE="${{ steps.check_sdk.outputs.package }}"
-
-          "$MANAGER" --sdk_root="$SDK" \
-            --install "$PACKAGE" "platform-tools"
-
-          if [ ! -d "$SDK/platforms/android-37" ] && \
-             [ -d "$SDK/platforms/android-37.0" ]; then
-            ln -s android-37.0 "$SDK/platforms/android-37"
-          fi
-
-          ls -la "$SDK/platforms"
+          echo "Android SDK 37.2 is ready."
 
       - name: Create debug signing key
         shell: bash
@@ -120,7 +123,9 @@ jobs:
               -alias androiddebugkey \
               -keypass android \
               -dname "CN=Android Debug,O=Android,C=US" \
-              -keyalg RSA -keysize 2048 -validity 10000
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000
           fi
 
       - name: Build JoyMusic APK
@@ -130,7 +135,9 @@ jobs:
           METROLIST_APP_NAME: JoyMusic
         run: |
           chmod +x ./gradlew
-          ./gradlew --no-daemon --stacktrace assembleFossRelease
+
+          ./gradlew --no-daemon \
+            --stacktrace assembleFossRelease
 
       - name: Upload JoyMusic APK
         uses: actions/upload-artifact@v4
