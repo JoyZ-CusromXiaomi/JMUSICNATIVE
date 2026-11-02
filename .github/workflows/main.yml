@@ -27,8 +27,7 @@ jobs:
             unzip -q "JoyMusic_Android_Native_Source.zip" -d joymusic-source
             echo "dir=joymusic-source" >> "$GITHUB_OUTPUT"
           else
-            echo "ERROR: Could not find gradlew/app at repository root or JoyMusic_Android_Native_Source.zip."
-            echo "Upload the native source ZIP with that exact filename, or upload the extracted project files."
+            echo "ERROR: JoyMusic source ZIP not found."
             exit 1
           fi
 
@@ -41,10 +40,10 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK platform 37
+      - name: Install Android SDK
         run: sdkmanager "platforms;android-37"
 
-      - name: Create debug signing key for testing
+      - name: Create debug signing key
         shell: bash
         run: |
           mkdir -p "$HOME/.android"
@@ -58,8 +57,8 @@ jobs:
               -keyalg RSA -keysize 2048 -validity 10000
           fi
 
-      - name: Build signed JoyMusic APK
-        working-directory: ${{{{ steps.source.outputs.dir }}}}
+      - name: Build JoyMusic APK
+        working-directory: ${{ steps.source.outputs.dir }}
         env:
           METROLIST_APPLICATION_ID: com.joymusic.app
           METROLIST_APP_NAME: JoyMusic
@@ -67,11 +66,10 @@ jobs:
           chmod +x ./gradlew
           ./gradlew --no-daemon --stacktrace assembleFossRelease
 
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: JoyMusic-APK
-          path: ${{{{ steps.source.outputs.dir }}}}/app/build/outputs/apk/foss/release/*.apk
+          path: ${{ steps.source.outputs.dir }}/app/build/outputs/apk/foss/release/*.apk
           if-no-files-found: error
           retention-days: 14
-          
