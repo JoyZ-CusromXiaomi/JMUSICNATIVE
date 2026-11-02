@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   build:
-    name: Build JoyMusic Android 17 Release
+    name: Build JoyMusic Android Release
     runs-on: ubuntu-latest
     timeout-minutes: 75
 
@@ -27,7 +27,7 @@ jobs:
             unzip -q "JoyMusic_Source_Android17_API37.zip" -d joymusic-source
             echo "dir=joymusic-source" >> "$GITHUB_OUTPUT"
           else
-            echo "ERROR: JoyMusic API37 ZIP not found."
+            echo "ERROR: JoyMusic ZIP not found."
             ls -la
             exit 1
           fi
@@ -45,7 +45,7 @@ jobs:
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
 
           if [ -z "$SDK_ROOT" ]; then
-            echo "ERROR: Android SDK not found."
+            echo "Android SDK not found."
             exit 1
           fi
 
@@ -53,7 +53,7 @@ jobs:
             -type f -name sdkmanager | sort -V | tail -n 1)
 
           if [ -z "$SDKMANAGER" ]; then
-            echo "ERROR: SDK Manager not found."
+            echo "SDK Manager not found."
             exit 1
           fi
 
@@ -66,33 +66,47 @@ jobs:
           yes | "${{ steps.android.outputs.sdkmanager }}" \
             --sdk_root="${{ steps.android.outputs.sdk_root }}" \
             --licenses || true
-                  - name: Check Available Android SDK
+
+      - name: Check Available Android SDK
+        id: check_sdk
         shell: bash
         run: |
           SDK="${{ steps.android.outputs.sdk_root }}"
           MANAGER="${{ steps.android.outputs.sdkmanager }}"
 
-          echo "Checking available Android platforms..."
+          "$MANAGER" --sdk_root="$SDK" --list \
+            | tee /tmp/android-sdk-list.txt
 
-          "$MANAGER" --sdk_root="$SDK" --list
+          PACKAGE=$(grep -oE 'platforms;android-37(\.0)?' \
+            /tmp/android-sdk-list.txt | sort -u | head -n 1)
 
-          echo "Checking installed platforms..."
-          ls -la "$SDK/platforms"
+          if [ -z "$PACKAGE" ]; then
+            echo "ERROR: Android API 37 package not found."
+            echo "Available Android platforms:"
+            grep -E 'platforms;android-' \
+              /tmp/android-sdk-list.txt || true
+            exit 1
+          fi
+
+          echo "package=$PACKAGE" >> "$GITHUB_OUTPUT"
+          echo "Found package: $PACKAGE"
 
       - name: Install Android SDK 37
         shell: bash
         run: |
           SDK="${{ steps.android.outputs.sdk_root }}"
           MANAGER="${{ steps.android.outputs.sdkmanager }}"
+          PACKAGE="${{ steps.check_sdk.outputs.package }}"
 
           "$MANAGER" --sdk_root="$SDK" \
-            --install "platform-tools" "platforms;android-37"
+            --install "$PACKAGE" "platform-tools"
 
-          if [ ! -d "$SDK/platforms/android-37" ]; then
-            echo "ERROR: Android API 37 platform unavailable."
-            ls -la "$SDK/platforms"
-            exit 1
+          if [ ! -d "$SDK/platforms/android-37" ] && \
+             [ -d "$SDK/platforms/android-37.0" ]; then
+            ln -s android-37.0 "$SDK/platforms/android-37"
           fi
+
+          ls -la "$SDK/platforms"
 
       - name: Create debug signing key
         shell: bash
@@ -106,9 +120,7 @@ jobs:
               -alias androiddebugkey \
               -keypass android \
               -dname "CN=Android Debug,O=Android,C=US" \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000
+              -keyalg RSA -keysize 2048 -validity 10000
           fi
 
       - name: Build JoyMusic APK
