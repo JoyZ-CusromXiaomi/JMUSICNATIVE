@@ -66,6 +66,18 @@ jobs:
           yes | "${{ steps.android.outputs.sdkmanager }}" \
             --sdk_root="${{ steps.android.outputs.sdk_root }}" \
             --licenses || true
+                  - name: Check Available Android SDK
+        shell: bash
+        run: |
+          SDK="${{ steps.android.outputs.sdk_root }}"
+          MANAGER="${{ steps.android.outputs.sdkmanager }}"
+
+          echo "Checking available Android platforms..."
+
+          "$MANAGER" --sdk_root="$SDK" --list
+
+          echo "Checking installed platforms..."
+          ls -la "$SDK/platforms"
 
       - name: Install Android SDK 37
         shell: bash
